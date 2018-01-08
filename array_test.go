@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/go-json-schema/schema"
+	"github.com/go-json-schema/schema/draft04"
 	"github.com/go-json-schema/validator"
 	"github.com/go-json-schema/validator/builder"
 	"github.com/stretchr/testify/assert"
@@ -31,7 +32,7 @@ func TestArrayItemsReference(t *testing.T) {
 		}
 	}
 }`
-	s, err := schema.Parse(strings.NewReader(src))
+	s, err := schema.Parse(strings.NewReader(src), schema.WithSchemaID(draft04.SchemaID))
 	if !assert.NoError(t, err, "schema.Parseer should succeed") {
 		return
 	}
@@ -42,7 +43,7 @@ func TestArrayItemsReference(t *testing.T) {
 		return
 	}
 
-	buf := bytes.Buffer{}
+	var buf bytes.Buffer
 	g := validator.NewGenerator()
 	if !assert.NoError(t, g.Process(&buf, v), "Generator.Process should succeed") {
 		return
@@ -50,10 +51,12 @@ func TestArrayItemsReference(t *testing.T) {
 
 	code := buf.String()
 	if !assert.True(t, strings.Contains(code, "\tItems("), "Generated code chould contain `.Items()`") {
+		t.Logf("%s", code)
 		return
 	}
 
 	if !assert.True(t, strings.Contains(code, "\tPositionalItems("), "Generated code should contain `.PositionalItems()`") {
+		t.Logf("%s", code)
 		return
 	}
 }

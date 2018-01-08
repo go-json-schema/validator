@@ -1,13 +1,17 @@
 package builder
 
 import (
-	"github.com/lestrrat/go-jsschema"
-	"github.com/lestrrat/go-jsval"
+	"github.com/go-json-schema/schema"
+	"github.com/go-json-schema/validator"
 )
 
-func buildEnumConstraint(_ *buildctx, c *jsval.EnumConstraint, s *schema.Schema) error {
-	l := make([]interface{}, len(s.Enum))
-	copy(l, s.Enum)
-	c.Enum(l)
+type enumT interface {
+	Enum() schema.EnumList
+}
+
+func buildEnumConstraint(_ *buildctx, c *validator.EnumConstraint, s enumT) error {
+	for e := range s.Enum().Iterator() {
+		c.Append(e)
+	}
 	return nil
 }

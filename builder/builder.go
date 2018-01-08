@@ -187,17 +187,6 @@ func buildFromSchema(ctx *buildctx, s schema.Schema) (validator.Constraint, erro
 	return c, nil
 }
 
-type schemaT interface {
-	HasAllOf() bool
-	HasAnyOf() bool
-	HasNot() bool
-	HasReference() bool
-	AllOf() schema.SchemaList
-	AnyOf() schema.SchemaList
-	Not() schema.Schema
-	Reference() string
-}
-
 func buildFromDraft07Schema(ctx *buildctx, s *draft07.Schema) (validator.Constraint, error) {
 	if hasReference(s) {
 		c := validator.Reference(ctx.V)
