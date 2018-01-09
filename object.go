@@ -1,11 +1,13 @@
 package validator
 
 import (
-	"errors"
+	"bytes"
 	"reflect"
 	"regexp"
+	"sort"
 
 	"github.com/lestrrat/go-pdebug"
+	"github.com/pkg/errors"
 )
 
 type getPropValuer interface {
@@ -173,7 +175,7 @@ func (o *ObjectConstraint) getPropNames(rv reflect.Value) ([]string, error) {
 		keys = make([]string, len(vk))
 		for i, v := range vk {
 			if v.Kind() != reflect.String {
-				return nil, errors.New("panic: can only handle maps with string keys")
+				return nil, errors.New("error: can only handle maps with string keys")
 			}
 			keys[i] = v.String()
 		}
@@ -289,10 +291,18 @@ func (o *ObjectConstraint) setProp(rv reflect.Value, pname string, val interface
 }
 
 func (o *ObjectConstraint) getProp(rv reflect.Value, pname string) reflect.Value {
+	if pdebug.Enabled {
+		g := pdebug.Marker("ObjectConstraint.getProp %s", pname)
+		defer g.End()
+	}
+
 	switch rv.Kind() {
 	case reflect.Map:
-		pv := reflect.ValueOf(pname)
-		return rv.MapIndex(pv)
+		if pdebug.Enabled {
+		pdebug.Printf("%#v", rv.Interface())
+			pdebug.Printf("Looking up map index")
+		}
+		return rv.MapIndex(reflect.ValueOf(pname))
 	case reflect.Struct:
 		// This guy knows how to grab the value, given a name. Use that
 		if gpv, ok := rv.Interface().(getPropValuer); ok {
@@ -323,14 +333,8 @@ func (o *ObjectConstraint) getProp(rv reflect.Value, pname string) reflect.Value
 // Validate validates the given value against this ObjectConstraint
 func (o *ObjectConstraint) Validate(v interface{}) (err error) {
 	if pdebug.Enabled {
-		g := pdebug.IPrintf("START ObjectConstraint.Validate")
-		defer func() {
-			if err == nil {
-				g.IRelease("END ObjectConstraint.Validate (PASS)")
-			} else {
-				g.IRelease("END ObjectConstraint.Validate (FAIL): %s", err)
-			}
-		}()
+		g := pdebug.Marker("ObjectConstraint.Validate").BindError(&err)
+		defer g.End()
 	}
 
 	rv := reflect.ValueOf(v)
@@ -341,7 +345,7 @@ func (o *ObjectConstraint) Validate(v interface{}) (err error) {
 
 	fields, err := o.getPropNames(rv)
 	if err != nil {
-		return err
+		return errors.Wrap(err, `failed to fetch property names for target`)
 	}
 
 	lf := int64(len(fields))
@@ -359,6 +363,10 @@ func (o *ObjectConstraint) Validate(v interface{}) (err error) {
 	pseen := map[string]struct{}{}
 	for _, k := range fields {
 		premain[k] = struct{}{}
+	}
+
+	if pdebug.Enabled {
+		pdebug.Printf("%d properties to be checked", len(premain))
 	}
 
 	// Now, for all known constraints, validate the prop
@@ -434,6 +442,105 @@ func (o *ObjectConstraint) Validate(v interface{}) (err error) {
 		}
 	}
 
+	if err := o.validatePatternProperties(rv, premain, pseen); err != nil {
+		return errors.Wrap(err, `failed to validate pattern properties`)
+	}
+
+	if err := o.validateAdditionalProperties(rv, premain); err != nil {
+		return errors.Wrap(err, `failed to validate against additional properties`)
+	}
+
+	if err := o.validateDependencies(rv, pseen); err != nil {
+		return errors.Wrap(err, `failed to validate dependecies`)
+	}
+
+	return nil
+}
+
+func (o *ObjectConstraint) validateDependencies(rv reflect.Value, pseen map[string]struct{}) (err error) {
+	if pdebug.Enabled {
+		g := pdebug.Marker("ObjectConstraint.validateDependencies").BindError(&err)
+		defer g.End()
+	}
+
+	for pname := range pseen {
+		if pdebug.Enabled {
+			pdebug.Printf("Checking property %s", pname)
+		}
+
+		if deps := o.GetPropDependencies(pname); len(deps) > 0 {
+			if pdebug.Enabled {
+				pdebug.Printf("Property '%s' has dependencies", pname)
+			}
+			for _, dep := range deps {
+				if _, ok := pseen[dep]; !ok {
+					return errors.New("required dependency '" + dep + "' is mising")
+				}
+			}
+
+			// can't, and shouldn't do object validation after checking prop deps
+			continue
+		}
+
+		if depc := o.GetSchemaDependency(pname); depc != nil {
+			if err := depc.Validate(rv.Interface()); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (o *ObjectConstraint) validateAdditionalProperties(rv reflect.Value, premain map[string]struct{}) (err error) {
+	if pdebug.Enabled {
+		g := pdebug.Marker("ObjectConstraint.validateAdditionalProperties").BindError(&err)
+		defer g.End()
+	}
+
+	if len(premain) <= 0 {
+		// nothing to do
+		if pdebug.Enabled {
+			pdebug.Printf(`no properties remaining to be checked against additional properties`)
+		}
+		return nil
+	}
+
+	c := o.additionalProperties
+	if c == nil {
+		names := make([]string, 0, len(premain))
+		for pname := range premain {
+			names = append(names, pname)
+		}
+		sort.Strings(names)
+
+		var buf bytes.Buffer
+		for i, name := range names {
+			buf.WriteString(name)
+			if i < len(names)-1 {
+				buf.WriteByte(',')
+			}
+		}
+		return errors.New("additional properties are not allowed (" + buf.String() + ")")
+	}
+
+	for pname := range premain {
+		if pdebug.Enabled {
+			pdebug.Printf("Property '%s' needs to be validated", pname)
+		}
+		pval := o.getProp(rv, pname)
+		if err := c.Validate(pval.Interface()); err != nil {
+			return errors.New("object property for '" + pname + "' validation failed: " + err.Error())
+		}
+	}
+	return nil
+}
+
+func (o *ObjectConstraint) validatePatternProperties(rv reflect.Value, premain map[string]struct{}, pseen map[string]struct{}) (err error) {
+	if pdebug.Enabled {
+		g := pdebug.Marker("ObjectConstraint.validatePatternProperties").BindError(&err)
+		defer g.End()
+	}
 	for pat, c := range o.patternProperties {
 		if pdebug.Enabled {
 			pdebug.Printf("Checking patternProperty '%s'", pat.String())
@@ -456,42 +563,6 @@ func (o *ObjectConstraint) Validate(v interface{}) (err error) {
 			pseen[pname] = struct{}{}
 			if err := c.Validate(pval.Interface()); err != nil {
 				return errors.New("object property '" + pname + "' validation failed: " + err.Error())
-			}
-		}
-	}
-
-	if len(premain) > 0 {
-		c := o.additionalProperties
-		if c == nil {
-			return errors.New("additional properties are not allowed")
-		}
-
-		for pname := range premain {
-			pval := o.getProp(rv, pname)
-			if err := c.Validate(pval.Interface()); err != nil {
-				return errors.New("object property for '" + pname + "' validation failed: " + err.Error())
-			}
-		}
-	}
-
-	for pname := range pseen {
-		if deps := o.GetPropDependencies(pname); len(deps) > 0 {
-			if pdebug.Enabled {
-				pdebug.Printf("Property '%s' has dependencies", pname)
-			}
-			for _, dep := range deps {
-				if _, ok := pseen[dep]; !ok {
-					return errors.New("required dependency '" + dep + "' is mising")
-				}
-			}
-
-			// can't, and shouldn't do object validation after checking prop deps
-			continue
-		}
-
-		if depc := o.GetSchemaDependency(pname); depc != nil {
-			if err := depc.Validate(v); err != nil {
-				return err
 			}
 		}
 	}

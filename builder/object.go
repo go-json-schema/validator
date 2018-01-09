@@ -82,19 +82,26 @@ func buildDraft04ObjectConstraint(ctx *buildctx, c *validator.ObjectConstraint, 
 	if !s.HasAdditionalProperties() {
 		c.AdditionalProperties(validator.EmptyConstraint)
 	} else {
-		aitem, err := buildFromSchema(ctx, s.AdditionalProperties())
-		if err != nil {
-			return errors.Wrap(err, `failed to build additional proerties schema`)
+		ap := s.AdditionalProperties()
+		if ap.IsNegated() {
+			c.AdditionalProperties(nil)
+		} else if ap.IsEmpty() {
+			c.AdditionalProperties(validator.EmptyConstraint)
+		} else {
+			aitem, err := buildFromSchema(ctx, ap)
+			if err != nil {
+				return errors.Wrap(err, `failed to build additional proerties schema`)
+			}
+			c.AdditionalProperties(aitem)
 		}
-		c.AdditionalProperties(aitem)
 	}
 
 	if s.HasDependencies() {
-	for from, to := range s.Dependencies().Names() {
-		c.PropDependency(from, to...)
-	}
+		for from, to := range s.Dependencies().Names() {
+			c.PropDependency(from, to...)
+		}
 
-	for prop := range s.Dependencies().Schemas().Iterator() {
+		for prop := range s.Dependencies().Schemas().Iterator() {
 			depc, err := buildFromSchema(ctx, prop.Definition())
 			if err != nil {
 				return errors.Wrapf(err, `failed to build dependency %s`, prop.Name())

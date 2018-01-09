@@ -94,14 +94,14 @@ func (nc *NumberConstraint) Validate(v interface{}) (err error) {
 		if pdebug.Enabled {
 			pdebug.Printf("Checking inclusive minimum (%f)", nc.minimum)
 		}
-		if nc.minimum > f {
+		if nc.minimum >= f {
 			return errors.New("numeric value is less than the minimum")
 		}
 	case applyLimitExclusive:
 		if pdebug.Enabled {
 			pdebug.Printf("Checking exclusive minimum (%f)", nc.minimum)
 		}
-		if nc.minimum >= f {
+		if nc.minimum > f {
 			return errors.New("numeric value is less than the minimum")
 		}
 	}
@@ -112,14 +112,14 @@ func (nc *NumberConstraint) Validate(v interface{}) (err error) {
 		if pdebug.Enabled {
 			pdebug.Printf("Checking inclusive maximum (%f)", nc.maximum)
 		}
-		if nc.maximum > f {
+		if nc.maximum <= f {
 			return errors.New("numeric value is less than the maximum")
 		}
 	case applyLimitExclusive:
 		if pdebug.Enabled {
 			pdebug.Printf("Checking exclusive maximum (%f)", nc.maximum)
 		}
-		if nc.maximum >= f {
+		if nc.maximum < f {
 			return errors.New("numeric value is less than the maximum")
 		}
 	}

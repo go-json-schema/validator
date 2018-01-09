@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/go-json-schema/schema"
+	"github.com/go-json-schema/schema/draft04"
 	"github.com/go-json-schema/validator"
 	"github.com/go-json-schema/validator/builder"
 	"github.com/stretchr/testify/assert"
@@ -18,7 +19,7 @@ func TestStringFromSchema(t *testing.T) {
   "default": "Hello, World!"
 }`
 
-	s, err := schema.Parse(strings.NewReader(src))
+	s, err := schema.Parse(strings.NewReader(src), schema.WithSchemaID(draft04.SchemaID))
 	if !assert.NoError(t, err, "schema.Parse should succeed") {
 		return
 	}

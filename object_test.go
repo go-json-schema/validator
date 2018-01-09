@@ -1,10 +1,12 @@
 package validator_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/go-json-schema/schema"
+	"github.com/go-json-schema/schema/draft04"
 	"github.com/go-json-schema/validator/builder"
 	"github.com/stretchr/testify/assert"
 )
@@ -37,7 +39,7 @@ func TestObject(t *testing.T) {
 	}
 }`
 
-	s, err := schema.Parse(strings.NewReader(src))
+	s, err := schema.Parse(strings.NewReader(src), schema.WithSchemaID(draft04.SchemaID))
 	if !assert.NoError(t, err, "reading schema should succeed") {
 		return
 	}
@@ -53,7 +55,7 @@ func TestObject(t *testing.T) {
 		map[string]interface{}{"name": "World"},
 		map[string]interface{}{"name": "wooooooooooooooooooooooooooooooorld"},
 		map[string]interface{}{
-			"tags": []interface{}{ 1, "foo", false },
+			"tags": []interface{}{1, "foo", false},
 		},
 		map[string]interface{}{"name": "ハロー、ワールド"},
 		map[string]interface{}{"foo#ja": "フー！"},
@@ -91,7 +93,7 @@ func TestObjectDependency(t *testing.T) {
   }
 }`
 
-	s, err := schema.Parse(strings.NewReader(src))
+	s, err := schema.Parse(strings.NewReader(src), schema.WithSchemaID(draft04.SchemaID))
 	if !assert.NoError(t, err, "reading schema should succeed") {
 		return
 	}
@@ -124,7 +126,7 @@ func TestObjectDependency(t *testing.T) {
 }
 
 func TestObjectSchemaDependency(t *testing.T) {
-	const src =`{
+	const src = `{
   "type": "object",
 
   "properties": {
@@ -144,7 +146,7 @@ func TestObjectSchemaDependency(t *testing.T) {
   }
 }`
 
-	s, err := schema.Parse(strings.NewReader(src))
+	s, err := schema.Parse(strings.NewReader(src), schema.WithSchemaID(draft04.SchemaID))
 	if !assert.NoError(t, err, "reading schema should succeed") {
 		return
 	}
@@ -155,35 +157,36 @@ func TestObjectSchemaDependency(t *testing.T) {
 		return
 	}
 
-  data := []interface{}{
-    map[string]interface{}{
-			"name": "John Doe",
-		  "credit_card": "5555555555555555",
-		},
-  }
-  for _, input := range data {
-    t.Logf("Testing %#v (should FAIL)", input)
-    if !assert.Error(t, v.Validate(input), "validation fails") {
-      return
-    }
-  }
-
-	data = []interface{}{
+	data := []interface{}{
 		map[string]interface{}{
-		  "name": "John Doe",
-		  "credit_card": "5555555555555555",
-		  "billing_address": "555 Debtor's Lane",
-		},
-		map[string]interface{}{
-		  "name": "John Doe",
-		  "billing_address": "555 Debtor's Lane",
+			"name":        "John Doe",
+			"credit_card": "5555555555555555",
 		},
 	}
 	for _, input := range data {
-		t.Logf("Testing %#v (should PASS)", input)
-		if !assert.NoError(t, v.Validate(input), "validation passes") {
+		t.Logf("Testing %#v (should FAIL)", input)
+		if !assert.Error(t, v.Validate(input), "validation fails") {
 			return
 		}
 	}
-}
 
+	data = []interface{}{
+		map[string]interface{}{
+			"name":            "John Doe",
+			"credit_card":     "5555555555555555",
+			"billing_address": "555 Debtor's Lane",
+		},
+		map[string]interface{}{
+			"name":            "John Doe",
+			"billing_address": "555 Debtor's Lane",
+		},
+	}
+	for _, input := range data {
+		x := input
+		t.Run(fmt.Sprintf("%#v (should PASS)", x), func(t *testing.T) {
+			if !assert.NoError(t, v.Validate(x), "validation should pass") {
+				return
+			}
+		})
+	}
+}
